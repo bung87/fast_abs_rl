@@ -40,15 +40,19 @@ def make_html_safe(s):
     return s.replace("<", "&lt;").replace(">", "&gt;")
 
 
-def load_best_ckpt(model_dir, reverse=False):
+def load_best_ckpt(model_dir, cuda, reverse=False):
     """ reverse=False->loss, reverse=True->reward/score"""
     ckpts = os.listdir(join(model_dir, 'ckpt'))
     ckpt_matcher = re.compile('^ckpt-.*-[0-9]*')
     ckpts = sorted([c for c in ckpts if ckpt_matcher.match(c)],
                    key=lambda c: float(c.split('-')[1]), reverse=reverse)
     print('loading checkpoint {}...'.format(ckpts[0]))
+    map_location = 'cpu' if not cuda else None
+    kwargs = {}
+    if map_location:
+        kwargs["map_location"] = map_location
     ckpt = torch.load(
-        join(model_dir, 'ckpt/{}'.format(ckpts[0]))
+        join(model_dir, 'ckpt/{}'.format(ckpts[0])),**kwargs
     )['state_dict']
     return ckpt
 
@@ -58,7 +62,7 @@ class Abstractor(object):
         abs_meta = json.load(open(join(abs_dir, 'meta.json')))
         assert abs_meta['net'] == 'base_abstractor'
         abs_args = abs_meta['net_args']
-        abs_ckpt = load_best_ckpt(abs_dir)
+        abs_ckpt = load_best_ckpt(abs_dir,cuda)
         word2id = pkl.load(open(join(abs_dir, 'vocab.pkl'), 'rb'))
         abstractor = CopySumm(**abs_args)
         abstractor.load_state_dict(abs_ckpt)
@@ -189,7 +193,7 @@ class RLExtractor(object):
                             extractor._art_enc,
                             extractor._extractor,
                             ArticleBatcher(word2id, cuda))
-        ext_ckpt = load_best_ckpt(ext_dir, reverse=True)
+        ext_ckpt = load_best_ckpt(ext_dir,cuda, reverse=True)
         agent.load_state_dict(ext_ckpt)
         self._device = torch.device('cuda' if cuda else 'cpu')
         self._net = agent.to(self._device)
